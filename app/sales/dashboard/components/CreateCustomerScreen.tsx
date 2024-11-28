@@ -1,4 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
+import {
+  createFormInstance,
+  fetchFormFields,
+  submitFormData,
+  fetchVehicles,
+} from "../api/apiService";
 
 interface FormField {
   name: string;
@@ -9,87 +15,72 @@ interface FormField {
   id: number;
 }
 
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(file);
+  });
+};
+
 const CreateCustomerScreen = () => {
   const [formFields, setFormFields] = useState<FormField[]>([]);
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [formInstanceId, setFormInstanceId] = useState<number | null>(null);
+  const [nameSubmitted, setNameSubmitted] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [formLink, setFormLink] = useState<string | null>(null); // To hold the generated form link
 
-  const fetchFormFields = async () => {
-    setLoading(true);
-    setError("");
+  // New state for vehicles and selected vehicle
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
 
-    try {
-      const token = localStorage.getItem("auth_token");
-
-      if (!token) {
-        throw new Error("No token found. Please log in again.");
-      }
-
-      const response = await fetch(
-        "http://3.111.52.81:8000/form-builder/forms/active",
-        {
-          method: "GET",
-          headers: {
-            accept: "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error("Unauthorized. Please log in again.");
-        }
-        throw new Error(`Error: ${response.statusText}`);
-      }
-
-      const data: FormField[] = await response.json();
-      setFormFields(data);
-    } catch (err: any) {
-      setError(err.message || "Failed to fetch form fields");
-    } finally {
-      setLoading(false);
+  // Fetch vehicles when the component mounts
+  useEffect(() => {
+    const token = localStorage.getItem("auth_token"); // Fetch auth token from localStorage
+    if (token) {
+      setLoading(true);
+      fetchVehicles(token)
+        .then((data) => setVehicles(data))
+        .catch((err) => setError(err.message))
+        .finally(() => setLoading(false));
     }
-  };
+  }, []);
 
-  const handleCreateFormInstance = async () => {
+  useEffect(() => {
+    const fetchFormData = async () => {
+      if (formInstanceId) {
+        setLoading(true);
+        try {
+          const fields = await fetchFormFields(formInstanceId);
+          setFormFields(fields);
+        } catch (err) {
+          setError("Failed to fetch form fields");
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchFormData();
+  }, [formInstanceId]);
+
+  const handleCustomerNameSubmit = async () => {
     setLoading(true);
     setError("");
-
     try {
-      const token = localStorage.getItem("auth_token");
-
-      if (!token) {
-        throw new Error("No token found. Please log in again.");
-      }
-
-      const response = await fetch(
-        `http://3.111.52.81:8000/form-builder/forms/create?customer_name=${encodeURIComponent(
-          name
-        )}&customer_email=${encodeURIComponent(email)}`,
-        {
-          method: "POST",
-          headers: {
-            accept: "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      if (data.form_instance_id) {
-        setFormInstanceId(data.form_instance_id);
-        localStorage.setItem("form_instance_id", data.form_instance_id); // Optional: Store in localStorage
-        await fetchFormFields();
-      }
+      const instanceId = await createFormInstance(customerName);
+      setFormInstanceId(instanceId);
+      localStorage.setItem("form_instance_id", String(instanceId));
+      console.log("Form Instance ID:", instanceId);
+      setNameSubmitted(true);
+      // Generate the link with the form instance ID
+      const generatedLink = `http://localhost:3000/customer/${instanceId}`;
+      setFormLink(generatedLink); // Store the generated link
     } catch (err: any) {
       setError(err.message || "Failed to create form instance");
     } finally {
@@ -111,127 +102,186 @@ const CreateCustomerScreen = () => {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const formDataToSubmit = new FormData();
-    for (const [key, value] of Object.entries(formData)) {
-      formDataToSubmit.append(
-        key,
-        value instanceof File ? value : JSON.stringify(value)
-      );
+    if (!formInstanceId) {
+      setError("Form instance ID is missing. Please try again.");
+      return;
     }
 
-    console.log("Form Data to Submit:", formDataToSubmit);
-    // Perform API submission with `formDataToSubmit`
+    const formDataToSubmit: Record<string, any> = {};
+    for (const [key, value] of Object.entries(formData)) {
+      // Ensure files are converted to base64 if required by the API
+      if (value instanceof File) {
+        const base64 = await fileToBase64(value);
+        formDataToSubmit[key] = base64;
+      } else {
+        formDataToSubmit[key] = value;
+      }
+    }
+
+    setLoading(true);
+    setError("");
+    setSuccessMessage("");
+    try {
+      // Submit form data and get the form_instance_id from the response
+      const formInstanceIdFromApi = await submitFormData(
+        formInstanceId,
+        formDataToSubmit
+      );
+
+      // Optionally store the form_instance_id in localStorage or state
+      localStorage.setItem("form_instance_id", String(formInstanceIdFromApi));
+
+      setSuccessMessage("Form submitted successfully!");
+      console.log("Form instance ID from API response:", formInstanceIdFromApi);
+
+      // Generate the link with the form instance ID after submission
+      const generatedLink = `http://localhost:3000/customer/${formInstanceIdFromApi}`;
+      setFormLink(generatedLink); // Store the generated link
+    } catch (err: any) {
+      setError(err.message || "Failed to submit the form");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error}</div>;
 
   return (
     <div className="p-4">
       <h1>Create Customer</h1>
-
-      {!formInstanceId ? (
-        // Email and Name Input Section
-        <div className="mb-4">
-          <div className="mb-4">
-            <label htmlFor="email" className="block text-gray-700 font-medium">
-              Customer Email
-            </label>
-            <input
-              type="email"
-              id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="border p-2 w-full rounded"
-              required
-            />
-          </div>
-          <div className="mb-4">
-            <label htmlFor="name" className="block text-gray-700 font-medium">
-              Customer Name
-            </label>
-            <input
-              type="text"
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="border p-2 w-full rounded"
-              required
-            />
-          </div>
-          <button
-            onClick={handleCreateFormInstance}
-            className="bg-blue-500 text-white px-4 py-2 rounded"
+      {!nameSubmitted ? (
+        <div>
+          <label
+            htmlFor="customerName"
+            className="block text-gray-700 font-medium"
           >
-            Create Form Instance
+            Customer Name
+          </label>
+          <input
+            type="text"
+            id="customerName"
+            name="customerName"
+            className="border p-2 w-full rounded"
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            required
+          />
+          <button
+            type="button"
+            onClick={handleCustomerNameSubmit}
+            className="bg-blue-500 text-white px-4 py-2 rounded mt-4"
+          >
+            Submit Name
           </button>
+          {error && <div className="text-red-500 mt-2">{error}</div>}
         </div>
       ) : (
-        // Render Custom Form Fields
         <form onSubmit={handleSubmit}>
-          {formFields.map((field) => (
-            <div key={field.id} className="mb-4">
-              <label
-                htmlFor={field.name}
-                className="block text-gray-700 font-medium"
-              >
-                {field.name} {field.is_required && "*"}
-              </label>
+          <h2>Customer Form</h2>
 
-              {field.filled_by === "sales_executive" ? (
-                // Editable fields
-                field.field_type === "image" ? (
-                  <input
-                    type="file"
-                    id={field.name}
-                    name={field.name}
-                    required={field.is_required}
-                    accept="image/*"
-                    className="border p-2 w-full rounded"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        handleFileChange(field.name, e.target.files[0]);
+          {/* Dropdown for Vehicle Selection */}
+          <div className="mb-4">
+            <label
+              htmlFor="vehicle"
+              className="block text-gray-700 font-medium"
+            >
+              Vehicle
+            </label>
+            <select
+              id="vehicle"
+              name="vehicle"
+              className="border p-2 w-full rounded"
+              value={selectedVehicle || ""}
+              onChange={(e) => setSelectedVehicle(e.target.value)}
+            >
+              <option value="">Select Vehicle</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>
+                  {vehicle.name}
+                </option>
+              ))}
+            </select>
+            {error && <div className="text-red-500 mt-2">{error}</div>}
+          </div>
+
+          {formFields.length > 0 ? (
+            formFields.map((field) => (
+              <div key={field.id} className="mb-4">
+                <label
+                  htmlFor={field.name}
+                  className="block text-gray-700 font-medium"
+                >
+                  {field.name} {field.is_required && "*"}
+                </label>
+
+                {field.filled_by === "sales_executive" ? (
+                  field.field_type === "image" ? (
+                    <input
+                      type="file"
+                      id={field.name}
+                      name={field.name}
+                      required={field.is_required}
+                      accept="image/*"
+                      className="border p-2 w-full rounded"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleFileChange(field.name, e.target.files[0]);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <input
+                      type={field.field_type}
+                      id={field.name}
+                      name={field.name}
+                      required={field.is_required}
+                      className="border p-2 w-full rounded"
+                      onChange={(e) =>
+                        handleInputChange(field.name, e.target.value)
                       }
-                    }}
-                  />
+                    />
+                  )
                 ) : (
                   <input
-                    type={field.field_type}
+                    type={
+                      field.field_type === "image" ? "text" : field.field_type
+                    }
                     id={field.name}
                     name={field.name}
-                    required={field.is_required}
-                    className="border p-2 w-full rounded"
-                    onChange={(e) =>
-                      handleInputChange(field.name, e.target.value)
-                    }
+                    value={formData[field.name] || ""}
+                    placeholder="To be filled by customer"
+                    disabled
+                    className="border p-2 w-full rounded text-gray-500"
                   />
-                )
-              ) : (
-                // Non-editable fields
-                <input
-                  type={
-                    field.field_type === "image" ? "text" : field.field_type
-                  }
-                  id={field.name}
-                  name={field.name}
-                  value={formData[field.name] || ""}
-                  placeholder="To be filled by customer"
-                  disabled
-                  className="border p-2 w-full rounded text-gray-500"
-                />
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            ))
+          ) : (
+            <div>Loading form fields...</div>
+          )}
           <button
             type="submit"
-            className="bg-blue-500 text-white px-4 py-2 rounded"
+            className="bg-blue-500 text-white px-4 py-2 rounded mt-4"
           >
             Submit
           </button>
+          {successMessage && (
+            <div className="text-green-500 mt-2">{successMessage}</div>
+          )}
         </form>
+      )}
+
+      {/* Display the generated link */}
+      {formLink && (
+        <div className="mt-4">
+          <h3>Customer Form Link</h3>
+          <a href={formLink} target="_blank" rel="noopener noreferrer">
+            {formLink}
+          </a>
+        </div>
       )}
     </div>
   );

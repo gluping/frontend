@@ -1,19 +1,19 @@
-import React, { useState } from "react";
+"use client";
+
+import { useState } from "react";
+
 import { IconHome, IconNewSection } from "@tabler/icons-react";
 import InsertChartOutlinedOutlinedIcon from "@mui/icons-material/InsertChartOutlinedOutlined";
 import ChatBubbleOutlineOutlinedIcon from "@mui/icons-material/ChatBubbleOutlineOutlined";
 import AccountCircleOutlinedIcon from "@mui/icons-material/AccountCircleOutlined";
-import HomeScreen from "./homescreen"; // Import the HomeScreen component
+import HomeScreen from "./homescreen";
 import CreateCustomerScreen from "./CreateCustomerScreen";
 import ProfileScreen from "./ProfileScreen";
+import ChatScreen from "./MessageScreen";
 
-const MessageScreen = () => (
-  <div className="p-4">Welcome to Message Screen</div>
-);
 const PerformanceScreen = () => (
   <div className="p-4">Welcome to Performance Screen</div>
 );
-
 
 export function FloatingDockDemo() {
   const [activeTab, setActiveTab] = useState("Home");
@@ -56,7 +56,7 @@ export function FloatingDockDemo() {
           }`}
         />
       ),
-      screen: <MessageScreen />,
+      screen: <ChatScreen />,
     },
     {
       title: "Performance",

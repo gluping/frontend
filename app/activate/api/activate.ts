@@ -1,5 +1,5 @@
 export const verifyEmail = async (email: string): Promise<string> => {
-  const apiUrl = `http://3.111.52.81:8000/verify-email?email=${email}`;
+  const apiUrl = `https://3.111.52.81:8000/verify-email?email=${email}`;
 
   try {
     const response = await fetch(apiUrl, {
@@ -27,7 +27,7 @@ export const verifyEmail = async (email: string): Promise<string> => {
 // api/activate.ts
 export const verifyOtp = async (email: string, otp: string) => {
   const response = await fetch(
-    `http://3.111.52.81:8000/verify-otp?email=${encodeURIComponent(email)}&otp_code=${encodeURIComponent(otp)}`,
+    `https://3.111.52.81:8000/verify-otp?email=${encodeURIComponent(email)}&otp_code=${encodeURIComponent(otp)}`,
     {
       method: "POST",
       headers: {
@@ -57,7 +57,7 @@ export const activateEmployee = async (data: {
   phone_number: string;
 }) => {
   try {
-    const response = await fetch("http://3.111.52.81:8000/employees/activate", {
+    const response = await fetch("https://3.111.52.81:8000/employees/activate", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
