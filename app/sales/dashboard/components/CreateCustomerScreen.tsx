@@ -3,8 +3,9 @@ import {
   createFormInstance,
   fetchFormFields,
   submitFormData,
-  fetchVehicles,
+  submitAmountData,
 } from "../api/apiService";
+import VehicleDropdown from "./dropDown/VehicleDropdown";
 
 interface FormField {
   name: string;
@@ -33,22 +34,27 @@ const CreateCustomerScreen = () => {
   const [formInstanceId, setFormInstanceId] = useState<number | null>(null);
   const [nameSubmitted, setNameSubmitted] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const [formLink, setFormLink] = useState<string | null>(null); // To hold the generated form link
+  const [formLink, setFormLink] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
-  // New state for vehicles and selected vehicle
-  const [vehicles, setVehicles] = useState<any[]>([]);
-  const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
+  // New state for amount details
+  const [vehicleId, setVehicleId] = useState<number | null>(null);
+  const [vehicleTotalPrice, setVehicleTotalPrice] = useState<number>(0);
+  const [totalAmount, setTotalAmount] = useState<number>(0);
+  const [amountPaid, setAmountPaid] = useState<number>(0);
+  const [balanceAmount, setBalanceAmount] = useState<number>(0);
 
-  // Fetch vehicles when the component mounts
+  // Restored handleInputChange function
+  const handleInputChange = (fieldName: string, value: any) => {
+    setFormData((prevData) => {
+      const updatedData = { ...prevData, [fieldName]: value };
+      return updatedData;
+    });
+  };
+
   useEffect(() => {
-    const token = localStorage.getItem("auth_token"); // Fetch auth token from localStorage
-    if (token) {
-      setLoading(true);
-      fetchVehicles(token)
-        .then((data) => setVehicles(data))
-        .catch((err) => setError(err.message))
-        .finally(() => setLoading(false));
-    }
+    const storedToken = localStorage.getItem("auth_token");
+    if (storedToken) setToken(storedToken);
   }, []);
 
   useEffect(() => {
@@ -65,7 +71,6 @@ const CreateCustomerScreen = () => {
         }
       }
     };
-
     fetchFormData();
   }, [formInstanceId]);
 
@@ -76,11 +81,9 @@ const CreateCustomerScreen = () => {
       const instanceId = await createFormInstance(customerName);
       setFormInstanceId(instanceId);
       localStorage.setItem("form_instance_id", String(instanceId));
-      console.log("Form Instance ID:", instanceId);
       setNameSubmitted(true);
-      // Generate the link with the form instance ID
       const generatedLink = `http://localhost:3000/customer/${instanceId}`;
-      setFormLink(generatedLink); // Store the generated link
+      setFormLink(generatedLink);
     } catch (err: any) {
       setError(err.message || "Failed to create form instance");
     } finally {
@@ -88,23 +91,70 @@ const CreateCustomerScreen = () => {
     }
   };
 
-  const handleInputChange = (fieldName: string, value: any) => {
-    setFormData((prevData) => ({
-      ...prevData,
-      [fieldName]: value,
-    }));
+  const handleVehicleSelect = (
+    vehicleName: string,
+    totalPrice: number,
+    vehicleId: number
+  ) => {
+    setFormData((prevData) => {
+      const updatedData = { ...prevData, totalPrice };
+      formFields.forEach((field) => {
+        if (field.field_type === "vehicle") {
+          updatedData[field.name] = vehicleName;
+        }
+      });
+      return updatedData;
+    });
+
+    // Store vehicle details
+    setVehicleId(vehicleId);
+    setVehicleTotalPrice(totalPrice);
+
+    // Update balance amount when vehicle is selected
+    const balance = totalPrice - amountPaid;
+    setBalanceAmount(balance);
+
+    localStorage.setItem(
+      "selected_vehicle",
+      JSON.stringify({ vehicleName, totalPrice, vehicleId })
+    );
   };
 
-  const handleFileChange = (fieldName: string, file: File) => {
-    setFormData((prevData) => ({
-      ...prevData,
-      [fieldName]: file,
-    }));
+  const handleAmountPaidChange = (amount: number) => {
+    setAmountPaid(amount);
+
+    // Recalculate balance amount
+    const balance = vehicleTotalPrice - amount;
+    setBalanceAmount(balance);
+  };
+
+  const handleSubmitAmountDetails = async () => {
+    if (!formInstanceId || !vehicleId) {
+      setError("Form instance or vehicle not selected");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await submitAmountData(
+        formInstanceId,
+        vehicleTotalPrice,
+        amountPaid,
+        balanceAmount,
+        vehicleId
+      );
+
+      setSuccessMessage("Amount details submitted successfully!");
+    } catch (err: any) {
+      setError(err.message || "Failed to submit amount details");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!formInstanceId) {
       setError("Form instance ID is missing. Please try again.");
       return;
@@ -112,7 +162,6 @@ const CreateCustomerScreen = () => {
 
     const formDataToSubmit: Record<string, any> = {};
     for (const [key, value] of Object.entries(formData)) {
-      // Ensure files are converted to base64 if required by the API
       if (value instanceof File) {
         const base64 = await fileToBase64(value);
         formDataToSubmit[key] = base64;
@@ -125,21 +174,13 @@ const CreateCustomerScreen = () => {
     setError("");
     setSuccessMessage("");
     try {
-      // Submit form data and get the form_instance_id from the response
       const formInstanceIdFromApi = await submitFormData(
         formInstanceId,
         formDataToSubmit
       );
-
-      // Optionally store the form_instance_id in localStorage or state
-      localStorage.setItem("form_instance_id", String(formInstanceIdFromApi));
-
       setSuccessMessage("Form submitted successfully!");
-      console.log("Form instance ID from API response:", formInstanceIdFromApi);
-
-      // Generate the link with the form instance ID after submission
       const generatedLink = `http://localhost:3000/customer/${formInstanceIdFromApi}`;
-      setFormLink(generatedLink); // Store the generated link
+      setFormLink(generatedLink);
     } catch (err: any) {
       setError(err.message || "Failed to submit the form");
     } finally {
@@ -147,11 +188,11 @@ const CreateCustomerScreen = () => {
     }
   };
 
-  if (loading) return <div>Loading...</div>;
+  // Rest of the component remains the same as in the previous submission...
 
   return (
     <div className="p-4">
-      <h1>Create Customer</h1>
+      <h1 className="text-xl font-bold mb-4">Create Customer</h1>
       {!nameSubmitted ? (
         <div>
           <label
@@ -163,14 +204,12 @@ const CreateCustomerScreen = () => {
           <input
             type="text"
             id="customerName"
-            name="customerName"
             className="border p-2 w-full rounded"
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
             required
           />
           <button
-            type="button"
             onClick={handleCustomerNameSubmit}
             className="bg-blue-500 text-white px-4 py-2 rounded mt-4"
           >
@@ -180,108 +219,101 @@ const CreateCustomerScreen = () => {
         </div>
       ) : (
         <form onSubmit={handleSubmit}>
-          <h2>Customer Form</h2>
-
-          {/* Dropdown for Vehicle Selection */}
+          <h2 className="text-lg font-semibold mb-2">Customer Form</h2>
           <div className="mb-4">
-            <label
-              htmlFor="vehicle"
-              className="block text-gray-700 font-medium"
-            >
-              Vehicle
+            <label className="block text-gray-700 font-medium">
+              Select Vehicle
             </label>
-            <select
-              id="vehicle"
-              name="vehicle"
-              className="border p-2 w-full rounded"
-              value={selectedVehicle || ""}
-              onChange={(e) => setSelectedVehicle(e.target.value)}
-            >
-              <option value="">Select Vehicle</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>
-                  {vehicle.name}
-                </option>
-              ))}
-            </select>
-            {error && <div className="text-red-500 mt-2">{error}</div>}
+            <VehicleDropdown token={token} onSelect={handleVehicleSelect} />
           </div>
 
-          {formFields.length > 0 ? (
-            formFields.map((field) => (
-              <div key={field.id} className="mb-4">
-                <label
-                  htmlFor={field.name}
-                  className="block text-gray-700 font-medium"
-                >
-                  {field.name} {field.is_required && "*"}
-                </label>
+          {formFields.map((field) => (
+            <div key={field.id} className="mb-4">
+              <label
+                htmlFor={field.name}
+                className="block text-gray-700 font-medium"
+              >
+                {field.name} {field.is_required && "*"}
+              </label>
+              <input
+                type={
+                  field.field_type === "vehicle" ? "text" : field.field_type
+                }
+                id={field.name}
+                name={field.name}
+                required={field.is_required}
+                className="border p-2 w-full rounded"
+                value={formData[field.name] || ""}
+                onChange={(e) => handleInputChange(field.name, e.target.value)}
+                disabled={field.filled_by !== "sales_executive"}
+              />
+            </div>
+          ))}
 
-                {field.filled_by === "sales_executive" ? (
-                  field.field_type === "image" ? (
-                    <input
-                      type="file"
-                      id={field.name}
-                      name={field.name}
-                      required={field.is_required}
-                      accept="image/*"
-                      className="border p-2 w-full rounded"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          handleFileChange(field.name, e.target.files[0]);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <input
-                      type={field.field_type}
-                      id={field.name}
-                      name={field.name}
-                      required={field.is_required}
-                      className="border p-2 w-full rounded"
-                      onChange={(e) =>
-                        handleInputChange(field.name, e.target.value)
-                      }
-                    />
-                  )
-                ) : (
-                  <input
-                    type={
-                      field.field_type === "image" ? "text" : field.field_type
-                    }
-                    id={field.name}
-                    name={field.name}
-                    value={formData[field.name] || ""}
-                    placeholder="To be filled by customer"
-                    disabled
-                    className="border p-2 w-full rounded text-gray-500"
-                  />
-                )}
-              </div>
-            ))
-          ) : (
-            <div>Loading form fields...</div>
-          )}
+          {/* Amount Details Section */}
+          <div className="mt-6 border-t pt-4">
+            <h3 className="text-lg font-semibold mb-4">Payment Details</h3>
+
+            <div className="mb-4">
+              <label className="block text-gray-700 font-medium">
+                Vehicle Total Price
+              </label>
+              <input
+                type="number"
+                value={vehicleTotalPrice}
+                readOnly
+                className="border p-2 w-full rounded bg-black-200"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-gray-700 font-medium">
+                Amount Paid
+              </label>
+              <input
+                type="number"
+                value={amountPaid}
+                onChange={(e) => handleAmountPaidChange(Number(e.target.value))}
+                className="border p-2 w-full rounded"
+                min="0"
+                max={vehicleTotalPrice}
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-gray-700 font-medium">
+                Balance Amount
+              </label> 
+              <input
+                type="number"
+                value={balanceAmount}
+                readOnly
+                className="border p-2 w-full rounded bg-blsck-100"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSubmitAmountDetails}
+              className="bg-green-500 text-white px-4 py-2 rounded mt-4"
+              disabled={!vehicleId || amountPaid < 0}
+            >
+              Submit Amount Details
+            </button>
+          </div>
+
           <button
             type="submit"
             className="bg-blue-500 text-white px-4 py-2 rounded mt-4"
           >
-            Submit
+            Submit Form
           </button>
-          {successMessage && (
-            <div className="text-green-500 mt-2">{successMessage}</div>
-          )}
-        </form>
-      )}
 
-      {/* Display the generated link */}
-      {formLink && (
-        <div className="mt-4">
-          <h3>Customer Form Link</h3>
-          <a href={formLink} target="_blank" rel="noopener noreferrer">
-            {formLink}
-          </a>
-        </div>
+          {successMessage && (
+            <div className="text-green-500 mt-4">{successMessage}</div>
+          )}
+          {error && <div className="text-red-500 mt-4">{error}</div>}
+        </form>
       )}
     </div>
   );
