@@ -1,7 +1,18 @@
 import React, { useEffect, useState } from "react";
 
+// Define Vehicle interface
+interface Vehicle {
+  id: number;
+  name: string;
+  total_price: number;
+}
+
 interface VehicleDropdownProps {
-  onSelect: (vehicleName: string, totalPrice: number) => void;
+  onSelect: (
+    vehicleName: string,
+    totalPrice: number,
+    vehicleId: number
+  ) => void;
 }
 
 const VehicleDropdown: React.FC<VehicleDropdownProps> = ({ onSelect }) => {
@@ -12,12 +23,17 @@ const VehicleDropdown: React.FC<VehicleDropdownProps> = ({ onSelect }) => {
   useEffect(() => {
     // Retrieve token from local storage
     const storedToken = localStorage.getItem("auth_token");
-    setToken(storedToken);
+    if (storedToken) {
+      setToken(storedToken);
+    }
   }, []);
 
   useEffect(() => {
     const fetchVehicles = async () => {
-      if (!token) return;
+      if (!token) {
+        console.error("No token available for fetching vehicles.");
+        return;
+      }
 
       try {
         const response = await fetch(
@@ -44,16 +60,19 @@ const VehicleDropdown: React.FC<VehicleDropdownProps> = ({ onSelect }) => {
       }
     };
 
-    fetchVehicles();
+    if (token) {
+      fetchVehicles();
+    }
   }, [token]);
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value;
     const vehicle = vehicles.find((v) => v.id.toString() === selectedId);
+
     if (vehicle) {
       setSelectedVehicle(vehicle);
-      onSelect(vehicle.name, vehicle.total_price); // Pass vehicle name
-      localStorage.setItem("selected_vehicle", JSON.stringify(vehicle)); // Save to local storage
+      onSelect(vehicle.name, vehicle.total_price, vehicle.id);
+      localStorage.setItem("selected_vehicle", JSON.stringify(vehicle));
     }
   };
 
@@ -67,6 +86,7 @@ const VehicleDropdown: React.FC<VehicleDropdownProps> = ({ onSelect }) => {
           </option>
         ))}
       </select>
+
       {selectedVehicle && (
         <div className="mt-2">
           <strong>Selected Vehicle:</strong> {selectedVehicle.name}
